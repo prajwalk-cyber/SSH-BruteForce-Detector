@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSH Brute Force Detector — Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+  header { padding: 1.2rem 2rem; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 12px; }
+  .logo { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  header h1 { font-size: 16px; font-weight: 600; color: #f1f5f9; letter-spacing: 0.02em; }
+  .updated { margin-left: auto; font-size: 12px; color: #475569; }
+  .container { padding: 1.5rem 2rem; max-width: 1100px; margin: 0 auto; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
+  .metric { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1rem 1.2rem; }
+  .metric-val { font-size: 28px; font-weight: 700; color: #f1f5f9; }
+  .metric-val.danger { color: #f87171; }
+  .metric-val.safe  { color: #4ade80; }
+  .metric-lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 1.5rem; }
+  @media(max-width:700px){ .grid2 { grid-template-columns: 1fr; } }
+  .panel { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.2rem; }
+  .panel h2 { font-size: 13px; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 12px; }
+  .ip-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #0f1117; font-size: 13px; }
+  .ip-row:last-child { border: none; }
+  .ip-addr { font-family: monospace; color: #f87171; }
+  .ip-time { color: #475569; font-size: 11px; }
+  .btn-unblock { font-size: 11px; padding: 3px 10px; border-radius: 6px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; }
+  .btn-unblock:hover { border-color: #4ade80; color: #4ade80; }
+  .event-row { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid #0f1117; font-size: 12px; align-items: center; }
+  .event-row:last-child { border: none; }
+  .event-ip { font-family: monospace; color: #fb923c; min-width: 120px; }
+  .event-count { min-width: 60px; }
+  .bar-wrap { flex: 1; background: #0f1117; border-radius: 4px; height: 6px; }
+  .bar-fill { height: 6px; border-radius: 4px; background: #f87171; transition: width 0.4s; }
+  .bar-fill.warn { background: #fb923c; }
+  .event-time { color: #475569; font-size: 11px; min-width: 70px; text-align: right; }
+  .empty { color: #475569; font-size: 13px; padding: 1rem 0; text-align: center; }
+  .badge-blocked { background: #450a0a; color: #f87171; font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" id="status-dot"></div>
+  <h1>SSH Brute Force Detector</h1>
+  <span class="updated" id="updated">Loading...</span>
+</header>
+
+<div class="container">
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-val danger" id="m-blocked">—</div>
+      <div class="metric-lbl">IPs currently blocked</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val" id="m-total">—</div>
+      <div class="metric-lbl">Total failed attempts logged</div>
+    </div>
+    <div class="metric">
+      <div class="metric-val safe" id="m-safe">Active</div>
+      <div class="metric-lbl">Detector status</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Blocked IPs</h2>
+      <div id="blocked-list"><div class="empty">No IPs blocked yet</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Top attackers</h2>
+      <div id="top-list"><div class="empty">Waiting for attacks...</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Recent attack events</h2>
+    <div id="events-list"><div class="empty">Waiting for log entries...</div></div>
+  </div>
+
+</div>
+
+<script>
+async function fetchStats() {
+  const res  = await fetch('/api/stats');
+  const data = await res.json();
+
+  document.getElementById('m-blocked').textContent = data.blocked_count;
+  document.getElementById('m-total').textContent   = data.total_events;
+  document.getElementById('updated').textContent   = 'Last updated: ' + data.last_updated;
+
+  const blockedEl = document.getElementById('blocked-list');
+  const entries   = Object.entries(data.blocked_ips);
+  if (entries.length === 0) {
+    blockedEl.innerHTML = '<div class="empty">No IPs blocked yet</div>';
+  } else {
+    blockedEl.innerHTML = entries.map(([ip, time]) => `
+      <div class="ip-row">
+        <span class="ip-addr">${ip}</span>
+        <span class="ip-time">${time.slice(0,19)}</span>
+        <button class="btn-unblock" onclick="unblock('${ip}')">Unblock</button>
+      </div>`).join('');
+  }
+
+  const topEl  = document.getElementById('top-list');
+  const topIps = Object.entries(data.top_attackers);
+  const maxVal = topIps[0] ? topIps[0][1] : 1;
+  if (topIps.length === 0) {
+    topEl.innerHTML = '<div class="empty">Waiting for attacks...</div>';
+  } else {
+    topEl.innerHTML = topIps.map(([ip, count]) => `
+      <div class="event-row">
+        <span class="event-ip">${ip}</span>
+        <span class="event-count">${count} attempts</span>
+        <div class="bar-wrap"><div class="bar-fill ${count > 10 ? '' : 'warn'}" style="width:${Math.round(count/maxVal*100)}%"></div></div>
+      </div>`).join('');
+  }
+
+  const evEl = document.getElementById('events-list');
+  if (data.recent_events.length === 0) {
+    evEl.innerHTML = '<div class="empty">Waiting for log entries...</div>';
+  } else {
+    evEl.innerHTML = data.recent_events.map(e => `
+      <div class="event-row">
+        <span class="event-ip">${e.ip}</span>
+        <span class="event-count" style="color:${e.count >= e.threshold ? '#f87171' : '#fb923c'}">${e.count}/${e.threshold} attempts</span>
+        ${e.count >= e.threshold ? '<span class="badge-blocked">BLOCKED</span>' : ''}
+        <span class="event-time">${e.time.slice(11,19)}</span>
+      </div>`).join('');
+  }
+}
+
+async function unblock(ip) {
+  await fetch('/api/unblock/' + ip, { method: 'POST' });
+  fetchStats();
+}
+
+fetchStats();
+setInterval(fetchStats, 3000);
+</script>
+</body>
+</html>
